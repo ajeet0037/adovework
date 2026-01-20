@@ -768,6 +768,50 @@ def pdf_to_excel(pdf_path: str, output_path: Optional[str] = None) -> str:
     return pdf_to_excel_advanced(pdf_path, output_path)
 
 
+def pdf_to_csv(pdf_path: str, output_path: Optional[str] = None) -> str:
+    """
+    Extract tables from PDF and convert to CSV
+    Returns first table found as CSV
+    """
+    import csv
+    
+    if output_path is None:
+        output_path = str(Path(pdf_path).with_suffix('.csv'))
+    
+    pdf_doc = fitz.open(pdf_path)
+    
+    all_rows = []
+    
+    for page_num in range(len(pdf_doc)):
+        page = pdf_doc[page_num]
+        
+        # Try to find tables using PyMuPDF's table detection
+        table_finder = page.find_tables()
+        tables = table_finder.tables if hasattr(table_finder, 'tables') else table_finder
+        
+        if tables and len(tables) > 0:
+            for table in tables:
+                rows = table.extract()
+                all_rows.extend(rows)
+        else:
+            # No tables - extract text as lines
+            text = page.get_text("text")
+            for line in text.split('\n'):
+                if line.strip():
+                    all_rows.append([line.strip()])
+    
+    pdf_doc.close()
+    
+    # Write to CSV
+    with open(output_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        for row in all_rows:
+            # Handle None values
+            cleaned_row = [cell if cell is not None else '' for cell in row]
+            writer.writerow(cleaned_row)
+    
+    return output_path
+
 def pdf_to_pptx_with_ocr(pdf_path: str, output_path: Optional[str] = None) -> str:
     """
     Convert image-based PDF to PowerPoint with OCR

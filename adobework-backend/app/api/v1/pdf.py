@@ -107,6 +107,32 @@ async def pdf_to_excel(file: UploadFile = File(...)):
         cleanup_file(input_path)
 
 
+@router.post("/to-csv", response_model=FileResponseModel)
+async def pdf_to_csv(file: UploadFile = File(...)):
+    """Extract tables from PDF and convert to CSV"""
+    validate_pdf_file(file)
+    
+    start_time = time.time()
+    input_path = await save_upload_file(file, "pdf")
+    
+    try:
+        output_filename = generate_filename(file.filename or "document", ".csv")
+        output_path = f"{settings.DOWNLOAD_DIR}/{output_filename}"
+        
+        pdf_convert.pdf_to_csv(input_path, output_path)
+        
+        file_size = Path(output_path).stat().st_size
+        processing_time = time.time() - start_time
+        
+        return FileResponseModel(
+            file_url=f"/downloads/{output_filename}",
+            filename=output_filename,
+            file_size=file_size,
+            processing_time=processing_time
+        )
+    finally:
+        cleanup_file(input_path)
+
 @router.post("/to-ppt", response_model=FileResponseModel)
 async def pdf_to_ppt(file: UploadFile = File(...)):
     """Convert PDF to PowerPoint presentation"""
