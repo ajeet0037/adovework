@@ -292,6 +292,68 @@ def pdf_to_word(pdf_path: str, output_path: Optional[str] = None) -> str:
         return pdf_to_word_advanced(pdf_path, output_path)
 
 
+def pdf_to_excel_with_ocr(pdf_path: str, output_path: Optional[str] = None) -> str:
+    """
+    Extract data from image-based PDF to Excel using OCR
+    """
+    if output_path is None:
+        output_path = str(Path(pdf_path).with_suffix('.xlsx'))
+    
+    pdf_doc = fitz.open(pdf_path)
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = "PDF Data"
+    
+    row_num = 1
+    
+    for page_num in range(len(pdf_doc)):
+        page = pdf_doc[page_num]
+        
+        # Add page header
+        ws.cell(row=row_num, column=1, value=f"Page {page_num + 1}")
+        ws.cell(row=row_num, column=1).font = Font(bold=True, size=12)
+        row_num += 1
+        
+        # Perform OCR
+        text = ocr_pdf_page(page)
+        
+        if text.strip():
+            # Split by lines and add to Excel
+            for line in text.split('\n'):
+                if line.strip():
+                    # Try to detect columns (split by multiple spaces or tabs)
+                    parts = [p.strip() for p in line.split('  ') if p.strip()]
+                    
+                    if len(parts) > 1:
+                        # Multiple columns detected
+                        for col_idx, part in enumerate(parts):
+                            ws.cell(row=row_num, column=col_idx + 1, value=part)
+                    else:
+                        # Single column
+                        ws.cell(row=row_num, column=1, value=line.strip())
+                    
+                    row_num += 1
+        
+        row_num += 1  # Space between pages
+    
+    # Auto-adjust column widths
+    for column in ws.columns:
+        max_length = 0
+        column_letter = column[0].column_letter
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 50)
+        ws.column_dimensions[column_letter].width = adjusted_width
+    
+    pdf_doc.close()
+    workbook.save(output_path)
+    return output_path
+
+
 def pdf_to_excel_advanced(pdf_path: str, output_path: Optional[str] = None) -> str:
     """
     Extract tables from PDF to Excel with formatting preservation
@@ -379,10 +441,14 @@ def pdf_to_excel_advanced(pdf_path: str, output_path: Optional[str] = None) -> s
 def pdf_to_excel(pdf_path: str, output_path: Optional[str] = None) -> str:
     """
     Extract tables from PDF and convert to Excel
-    Uses multiple methods for best table extraction
+    Automatically uses OCR for image-based PDFs
     """
     if output_path is None:
         output_path = str(Path(pdf_path).with_suffix('.xlsx'))
+    
+    # Check if OCR is needed
+    if is_image_based_pdf(pdf_path):
+        return pdf_to_excel_with_ocr(pdf_path, output_path)
     
     # Try camelot first if available (best for visible table borders)
     if CAMELOT_AVAILABLE:
@@ -409,6 +475,74 @@ def pdf_to_excel(pdf_path: str, output_path: Optional[str] = None) -> str:
     
     # Use PyMuPDF advanced extraction
     return pdf_to_excel_advanced(pdf_path, output_path)
+
+
+def pdf_to_pptx_with_ocr(pdf_path: str, output_path: Optional[str] = None) -> str:
+    """
+    Convert image-based PDF to PowerPoint with OCR
+    """
+    if output_path is None:
+        output_path = str(Path(pdf_path).with_suffix('.pptx'))
+    
+    pdf_doc = fitz.open(pdf_path)
+    prs = Presentation()
+    
+    # Set slide size
+    prs.slide_width = Inches(10)
+    prs.slide_height = Inches(7.5)
+    
+    # Blank layout
+    blank_layout = prs.slide_layouts[6]
+    
+    for page_num in range(len(pdf_doc)):
+        page = pdf_doc[page_num]
+        
+        # Add slide
+        slide = prs.slides.add_slide(blank_layout)
+        
+        # Render page as image
+        zoom = 2.0
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        
+        # Save temp image
+        temp_img_path = f"/tmp/pdf_slide_{page_num}.png"
+        pix.save(temp_img_path)
+        
+        # Add image to slide
+        margin = Inches(0.2)
+        pic = slide.shapes.add_picture(
+            temp_img_path,
+            margin,
+            margin,
+            width=prs.slide_width - (margin * 2),
+            height=prs.slide_height - (margin * 2)
+        )
+        
+        # Perform OCR and add as text box
+        text = ocr_pdf_page(page)
+        if text.strip():
+            # Add text box at bottom
+            left = Inches(0.5)
+            top = prs.slide_height - Inches(2)
+            width = prs.slide_width - Inches(1)
+            height = Inches(1.5)
+            
+            textbox = slide.shapes.add_textbox(left, top, width, height)
+            text_frame = textbox.text_frame
+            text_frame.text = text[:500]  # Limit text length
+            text_frame.word_wrap = True
+            
+            # Style text
+            for paragraph in text_frame.paragraphs:
+                paragraph.font.size = Pt(10)
+        
+        # Cleanup
+        os.remove(temp_img_path)
+    
+    pdf_doc.close()
+    prs.save(output_path)
+    return output_path
 
 
 def pdf_to_pptx_advanced(pdf_path: str, output_path: Optional[str] = None) -> str:
@@ -480,7 +614,17 @@ def pdf_to_pptx_advanced(pdf_path: str, output_path: Optional[str] = None) -> st
 
 
 def pdf_to_pptx(pdf_path: str, output_path: Optional[str] = None) -> str:
-    """Convert PDF to PowerPoint presentation"""
+    """
+    Convert PDF to PowerPoint presentation
+    Automatically uses OCR for image-based PDFs
+    """
+    if output_path is None:
+        output_path = str(Path(pdf_path).with_suffix('.pptx'))
+    
+    # Check if OCR is needed
+    if is_image_based_pdf(pdf_path):
+        return pdf_to_pptx_with_ocr(pdf_path, output_path)
+    
     return pdf_to_pptx_advanced(pdf_path, output_path)
 
 
