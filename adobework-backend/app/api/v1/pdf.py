@@ -40,17 +40,23 @@ router = APIRouter(prefix="/pdf", tags=["PDF"])
 @router.post("/to-word", response_model=FileResponseModel)
 async def pdf_to_word(
     file: UploadFile = File(...),
-    preserve_layout: bool = Form(True, description="Use image mode for perfect layout (best for complex docs like Aadhaar)")
+    mode: str = Form("auto", description="Conversion mode: auto, hybrid, image, text, ocr")
 ):
     """
-    Convert PDF to Word document.
+    Convert PDF to Word document with smart auto-detection.
     
-    - preserve_layout=True (default): Converts each page as high-quality image.
-      Best for complex documents like ID cards, Aadhaar, certificates.
-      Guarantees perfect visual layout but text is not editable.
+    Modes:
+    - **auto** (default): Automatically detects the best conversion method based on PDF analysis.
+      Uses 'text' for simple PDFs, 'hybrid' for complex PDFs (like Aadhaar), 'ocr' for scanned docs.
     
-    - preserve_layout=False: Tries to extract editable text.
-      May break layout for complex documents.
+    - **hybrid**: Image + extracted text. Best for complex documents - preserves layout perfectly
+      AND includes copyable text below each page.
+    
+    - **image**: Image only. Perfect visual layout, but text is not copyable.
+    
+    - **text**: Editable text extraction. May break layout for complex documents.
+    
+    - **ocr**: Force OCR. For scanned documents with no selectable text.
     """
     validate_pdf_file(file)
     
@@ -61,7 +67,7 @@ async def pdf_to_word(
         output_filename = generate_filename(file.filename or "document", ".docx")
         output_path = f"{settings.DOWNLOAD_DIR}/{output_filename}"
         
-        pdf_convert.pdf_to_word(input_path, output_path, preserve_layout=preserve_layout)
+        pdf_convert.pdf_to_word(input_path, output_path, mode=mode)
         
         file_size = Path(output_path).stat().st_size
         processing_time = time.time() - start_time

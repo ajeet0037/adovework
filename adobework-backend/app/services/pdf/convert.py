@@ -35,27 +35,80 @@ except ImportError:
     CAMELOT_AVAILABLE = False
 
 
+def analyze_pdf_type(pdf_path: str) -> dict:
+    """
+    Analyze PDF to determine the best conversion strategy.
+    
+    Returns dict with:
+    - is_scanned: True if PDF is purely scanned/image-based (needs OCR)
+    - is_complex: True if PDF has complex layout with images (like Aadhaar, ID cards)
+    - has_text: True if PDF has extractable text
+    - image_count: Count of images in the PDF
+    - text_length: Total text length
+    - recommendation: 'ocr', 'text', 'hybrid', or 'image'
+    """
+    try:
+        pdf_doc = fitz.open(pdf_path)
+        total_text_length = 0
+        total_images = 0
+        page_count = len(pdf_doc)
+        
+        # Check all pages (limit to 10 for performance)
+        for page_num in range(min(10, page_count)):
+            page = pdf_doc[page_num]
+            text = page.get_text()
+            total_text_length += len(text.strip())
+            total_images += len(page.get_images())
+        
+        pdf_doc.close()
+        
+        # Analyze the PDF
+        has_text = total_text_length > 100
+        has_many_images = total_images >= page_count  # At least 1 image per page
+        is_scanned = total_text_length < 100 and total_images > 0
+        
+        # Complex PDFs have both text AND significant images (like Aadhaar)
+        is_complex = has_text and has_many_images
+        
+        # Determine recommendation
+        if is_scanned:
+            recommendation = 'ocr'  # Need OCR for scanned docs
+        elif is_complex:
+            recommendation = 'hybrid'  # Complex layout - use image mode with OCR text
+        elif has_text and not has_many_images:
+            recommendation = 'text'  # Simple text PDF - extract editable text
+        else:
+            recommendation = 'image'  # Default to image mode for safety
+        
+        return {
+            'is_scanned': is_scanned,
+            'is_complex': is_complex,
+            'has_text': has_text,
+            'image_count': total_images,
+            'text_length': total_text_length,
+            'page_count': page_count,
+            'recommendation': recommendation
+        }
+    except Exception as e:
+        print(f"PDF analysis error: {e}")
+        return {
+            'is_scanned': False,
+            'is_complex': True,
+            'has_text': False,
+            'image_count': 0,
+            'text_length': 0,
+            'page_count': 0,
+            'recommendation': 'image'  # Default to safe option
+        }
+
+
 def is_image_based_pdf(pdf_path: str) -> bool:
     """
     Check if PDF is image-based (scanned) or text-based
     Returns True if PDF has minimal text and likely needs OCR
     """
-    try:
-        pdf_doc = fitz.open(pdf_path)
-        total_text_length = 0
-        
-        # Check first 3 pages
-        for page_num in range(min(3, len(pdf_doc))):
-            page = pdf_doc[page_num]
-            text = page.get_text()
-            total_text_length += len(text.strip())
-        
-        pdf_doc.close()
-        
-        # If very little text found, it's likely image-based
-        return total_text_length < 100
-    except:
-        return False
+    analysis = analyze_pdf_type(pdf_path)
+    return analysis['is_scanned']
 
 
 def ocr_pdf_page(page, lang='eng'):
@@ -160,6 +213,90 @@ def pdf_to_word_image_mode(pdf_path: str, output_path: Optional[str] = None, dpi
             os.remove(temp_img)
         except:
             pass
+    
+    pdf_doc.close()
+    doc.save(output_path)
+    return output_path
+
+
+def pdf_to_word_hybrid_mode(pdf_path: str, output_path: Optional[str] = None, dpi: int = 200) -> str:
+    """
+    Hybrid mode: Renders pages as images for perfect layout, but also includes
+    OCR/extracted text below each image for searchability and copy/paste.
+    
+    Best for complex documents where you need both visual fidelity AND text access.
+    
+    Args:
+        pdf_path: Path to input PDF
+        output_path: Optional output path
+        dpi: Image resolution
+    
+    Returns:
+        Path to output Word document
+    """
+    if output_path is None:
+        output_path = str(Path(pdf_path).with_suffix('.docx'))
+    
+    pdf_doc = fitz.open(pdf_path)
+    doc = DocxDocument()
+    
+    # Calculate zoom factor for desired DPI
+    zoom = dpi / 72.0
+    mat = fitz.Matrix(zoom, zoom)
+    
+    for page_num in range(len(pdf_doc)):
+        page = pdf_doc[page_num]
+        
+        # Add page break between pages (except first)
+        if page_num > 0:
+            doc.add_page_break()
+        
+        # Render page as high-quality image
+        pix = page.get_pixmap(matrix=mat)
+        
+        # Save temp image
+        temp_img = f"/tmp/pdf_page_{page_num}_{os.getpid()}.png"
+        pix.save(temp_img)
+        
+        # Get image dimensions
+        img_width_inches = page.rect.width / 72.0
+        max_width = 6.5
+        if img_width_inches > max_width:
+            img_width_inches = max_width
+        
+        # Insert image into Word document
+        try:
+            doc.add_picture(temp_img, width=DocxInches(img_width_inches))
+        except Exception as e:
+            print(f"Error adding image for page {page_num}: {e}")
+        
+        # Cleanup temp file
+        try:
+            os.remove(temp_img)
+        except:
+            pass
+        
+        # Extract text from PDF (try direct extraction first, fall back to OCR)
+        text = page.get_text().strip()
+        
+        # If no text extracted, try OCR
+        if len(text) < 50:
+            try:
+                text = ocr_pdf_page(page, lang='eng+hin')
+            except:
+                text = ""
+        
+        # Add extracted/OCR text below the image (in smaller font, as reference)
+        if text:
+            doc.add_paragraph()  # Spacer
+            para = doc.add_paragraph()
+            para.add_run("--- Extracted Text (for copy/paste) ---").bold = True
+            
+            # Add the text content
+            for line in text.split('\n'):
+                if line.strip():
+                    p = doc.add_paragraph(line.strip())
+                    p.style = 'Normal'
     
     pdf_doc.close()
     doc.save(output_path)
@@ -336,15 +473,19 @@ def pdf_to_word_advanced(pdf_path: str, output_path: Optional[str] = None) -> st
     return output_path
 
 
-def pdf_to_word(pdf_path: str, output_path: Optional[str] = None, preserve_layout: bool = True) -> str:
+def pdf_to_word(pdf_path: str, output_path: Optional[str] = None, mode: str = 'auto') -> str:
     """
-    Convert PDF to Word document
+    Convert PDF to Word document with smart auto-detection.
     
     Args:
         pdf_path: Path to input PDF
         output_path: Optional output path
-        preserve_layout: If True, uses image mode for perfect visual layout (best for complex docs).
-                        If False, tries to extract editable text (may break layout for complex PDFs).
+        mode: Conversion mode
+            - 'auto' (default): Smart auto-detection based on PDF analysis
+            - 'hybrid': Image + extracted text (best for complex docs like Aadhaar)
+            - 'image': Image only (perfect visual layout, no text)
+            - 'text': Extract editable text (may break layout for complex PDFs)
+            - 'ocr': Force OCR (for scanned documents)
     
     Returns:
         Path to output Word document
@@ -352,24 +493,61 @@ def pdf_to_word(pdf_path: str, output_path: Optional[str] = None, preserve_layou
     if output_path is None:
         output_path = str(Path(pdf_path).with_suffix('.docx'))
     
-    # Use image mode for guaranteed layout preservation (best for Aadhaar, ID cards, etc.)
-    if preserve_layout:
+    # Smart auto-detection
+    if mode == 'auto':
+        analysis = analyze_pdf_type(pdf_path)
+        print(f"[PDF Analysis] Type: {analysis['recommendation']}, "
+              f"Text: {analysis['text_length']} chars, "
+              f"Images: {analysis['image_count']}, "
+              f"Complex: {analysis['is_complex']}")
+        
+        recommendation = analysis['recommendation']
+        
+        if recommendation == 'text':
+            # Simple text PDF - try to extract editable text
+            try:
+                cv = PDFToDocxConverter(pdf_path)
+                cv.convert(output_path)
+                cv.close()
+                return output_path
+            except Exception:
+                # Fallback to advanced method
+                return pdf_to_word_advanced(pdf_path, output_path)
+        
+        elif recommendation == 'ocr':
+            # Scanned document - use OCR
+            return pdf_to_word_with_ocr(pdf_path, output_path)
+        
+        elif recommendation == 'hybrid':
+            # Complex layout with images - use hybrid mode (image + text)
+            return pdf_to_word_hybrid_mode(pdf_path, output_path)
+        
+        else:  # 'image' or unknown
+            # Default to image mode for safety
+            return pdf_to_word_image_mode(pdf_path, output_path)
+    
+    # Explicit mode selection
+    elif mode == 'hybrid':
+        return pdf_to_word_hybrid_mode(pdf_path, output_path)
+    
+    elif mode == 'image':
         return pdf_to_word_image_mode(pdf_path, output_path)
     
-    # Legacy mode: try to extract editable text
-    # Check if OCR is needed
-    if is_image_based_pdf(pdf_path):
+    elif mode == 'ocr':
         return pdf_to_word_with_ocr(pdf_path, output_path)
     
-    try:
-        # Try pdf2docx first (for simple text-based PDFs)
-        cv = PDFToDocxConverter(pdf_path)
-        cv.convert(output_path)
-        cv.close()
-        return output_path
-    except Exception:
-        # Fallback to our advanced method
-        return pdf_to_word_advanced(pdf_path, output_path)
+    elif mode == 'text':
+        try:
+            cv = PDFToDocxConverter(pdf_path)
+            cv.convert(output_path)
+            cv.close()
+            return output_path
+        except Exception:
+            return pdf_to_word_advanced(pdf_path, output_path)
+    
+    else:
+        # Unknown mode - default to hybrid for safety
+        return pdf_to_word_hybrid_mode(pdf_path, output_path)
 
 
 def pdf_to_excel_with_ocr(pdf_path: str, output_path: Optional[str] = None) -> str:
