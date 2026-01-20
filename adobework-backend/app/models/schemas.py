@@ -14,12 +14,9 @@ class SuccessResponse(BaseModel):
     message: str = "Operation completed successfully"
 
 
-class FileResponse(BaseModel):
+class FileResponse(File):
     """Response with file information"""
     success: bool = True
-    file_url: str
-    filename: str
-    file_size: int
     processing_time: float
 
 
@@ -36,6 +33,22 @@ class ErrorResponse(BaseModel):
     success: bool = False
     error: str
     detail: Optional[str] = None
+
+
+class File(BaseModel):
+    """File details"""
+    file_url: str
+    filename: str
+    file_size: int
+
+
+class FileList(BaseModel):
+    """List of files"""
+    success: bool = True
+    files: List[File]
+    total_files: int
+    total_size: int
+    processing_time: float
 
 
 # ============ PDF Models ============
@@ -183,6 +196,22 @@ class PassportPhotoRequest(BaseModel):
     background_color: str = "#FFFFFF"
     custom_width_mm: Optional[int] = None
     custom_height_mm: Optional[int] = None
+
+
+class File(BaseModel):
+    """File details"""
+    file_url: str
+    filename: str
+    file_size: int
+
+
+class FileList(BaseModel):
+    """List of files"""
+    success: bool = True
+    files: List[File]
+    total_files: int
+    total_size: int
+    processing_time: float
 
 
 # ============ OCR Models ============
