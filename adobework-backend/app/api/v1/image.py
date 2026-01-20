@@ -3,6 +3,7 @@ Image API Endpoints
 All image-related operations
 """
 import time
+import asyncio
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form
@@ -134,7 +135,7 @@ async def crop_image(
         output_filename = generate_filename(file.filename or "cropped", ext)
         output_path = f"{settings.DOWNLOAD_DIR}/{output_filename}"
         
-        img_ops.crop_image(input_path, output_path, x, y, width, height)
+        await asyncio.to_thread(img_ops.crop_image, input_path, output_path, x, y, width, height)
         
         file_size = Path(output_path).stat().st_size
         processing_time = time.time() - start_time
