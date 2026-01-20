@@ -648,6 +648,18 @@ def pdf_to_excel_advanced(pdf_path: str, output_path: Optional[str] = None) -> s
     Extract tables from PDF to Excel with formatting preservation
     Uses PyMuPDF for accurate table detection
     """
+    import re
+    
+    # Helper to sanitize cell values for Excel (remove illegal control characters)
+    def sanitize_for_excel(value):
+        if value is None:
+            return ""
+        value = str(value)
+        # Remove control characters that openpyxl doesn't allow (except tab, newline, carriage return)
+        # Excel doesn't allow characters with codes 0-8, 11-12, 14-31
+        illegal_chars = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+        return illegal_chars.sub('', value)
+    
     if output_path is None:
         output_path = str(Path(pdf_path).with_suffix('.xlsx'))
     
@@ -686,7 +698,7 @@ def pdf_to_excel_advanced(pdf_path: str, output_path: Optional[str] = None) -> s
                 # Extract table data
                 for row_idx, row in enumerate(table.extract()):
                     for col_idx, cell in enumerate(row):
-                        cell_obj = ws.cell(row=row_num, column=col_idx + 1, value=cell or "")
+                        cell_obj = ws.cell(row=row_num, column=col_idx + 1, value=sanitize_for_excel(cell))
                         cell_obj.border = thin_border
                         
                         # Style first row as header
@@ -706,7 +718,7 @@ def pdf_to_excel_advanced(pdf_path: str, output_path: Optional[str] = None) -> s
             
             for line in text.split('\n'):
                 if line.strip():
-                    ws.cell(row=row_num, column=1, value=line.strip())
+                    ws.cell(row=row_num, column=1, value=sanitize_for_excel(line.strip()))
                     row_num += 1
             
             row_num += 1
