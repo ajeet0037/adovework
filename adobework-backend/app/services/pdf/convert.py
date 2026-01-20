@@ -672,9 +672,11 @@ def pdf_to_excel_advanced(pdf_path: str, output_path: Optional[str] = None) -> s
         page = pdf_doc[page_num]
         
         # Try to find tables using PyMuPDF's table detection
-        tables = page.find_tables()
+        # Note: find_tables() returns a TableFinder object, access .tables for the list
+        table_finder = page.find_tables()
+        tables = table_finder.tables if hasattr(table_finder, 'tables') else table_finder
         
-        if tables:
+        if tables and len(tables) > 0:
             for table in tables:
                 # Add page header
                 ws.cell(row=row_num, column=1, value=f"Page {page_num + 1}")
