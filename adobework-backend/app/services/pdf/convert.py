@@ -2,6 +2,7 @@
 Advanced PDF Conversion Services
 High-quality conversions with font and formatting preservation
 Uses PyMuPDF (fitz) for professional-grade results
+Includes OCR support for image-based PDFs
 """
 import os
 import io
@@ -21,6 +22,10 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import inch
 from PyPDF2 import PdfReader
+import pytesseract
+from PIL import Image
+import cv2
+import numpy as np
 
 # camelot is optional - requires ghostscript
 try:
@@ -28,6 +33,141 @@ try:
     CAMELOT_AVAILABLE = True
 except ImportError:
     CAMELOT_AVAILABLE = False
+
+
+def is_image_based_pdf(pdf_path: str) -> bool:
+    """
+    Check if PDF is image-based (scanned) or text-based
+    Returns True if PDF has minimal text and likely needs OCR
+    """
+    try:
+        pdf_doc = fitz.open(pdf_path)
+        total_text_length = 0
+        
+        # Check first 3 pages
+        for page_num in range(min(3, len(pdf_doc))):
+            page = pdf_doc[page_num]
+            text = page.get_text()
+            total_text_length += len(text.strip())
+        
+        pdf_doc.close()
+        
+        # If very little text found, it's likely image-based
+        return total_text_length < 100
+    except:
+        return False
+
+
+def ocr_pdf_page(page, lang='eng'):
+    """
+    Perform OCR on a PDF page
+    Returns extracted text with basic formatting
+    """
+    try:
+        # Render page as high-quality image
+        zoom = 2.0  # 2x zoom for better OCR accuracy
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        
+        # Convert to PIL Image
+        img_data = pix.tobytes("png")
+        img = Image.open(io.BytesIO(img_data))
+        
+        # Convert to OpenCV format for preprocessing
+        img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        
+        # Preprocessing for better OCR
+        # Convert to grayscale
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        
+        # Apply thresholding to get black text on white background
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # Denoise
+        denoised = cv2.fastNlMeansDenoising(thresh, None, 10, 7, 21)
+        
+        # Convert back to PIL Image
+        processed_img = Image.fromarray(denoised)
+        
+        # Perform OCR with better config
+        custom_config = r'--oem 3 --psm 6'
+        text = pytesseract.image_to_string(processed_img, lang=lang, config=custom_config)
+        
+        return text
+    except Exception as e:
+        print(f"OCR error: {e}")
+        return ""
+
+
+def pdf_to_word_with_ocr(pdf_path: str, output_path: Optional[str] = None) -> str:
+    """
+    Convert PDF to Word with OCR support for image-based PDFs
+    Automatically detects if OCR is needed
+    
+    Args:
+        pdf_path: Path to input PDF
+        output_path: Optional output path
+    
+    Returns:
+        Path to output Word document
+    """
+    if output_path is None:
+        output_path = str(Path(pdf_path).with_suffix('.docx'))
+    
+    # Check if PDF needs OCR
+    needs_ocr = is_image_based_pdf(pdf_path)
+    
+    if needs_ocr:
+        print("Image-based PDF detected, using OCR...")
+        
+        # Open PDF
+        pdf_doc = fitz.open(pdf_path)
+        doc = DocxDocument()
+        
+        for page_num in range(len(pdf_doc)):
+            page = pdf_doc[page_num]
+            
+            # Add page break between pages (except first)
+            if page_num > 0:
+                doc.add_page_break()
+            
+            # Perform OCR on page
+            text = ocr_pdf_page(page)
+            
+            if text.strip():
+                # Add OCR text to document
+                for paragraph in text.split('\n\n'):
+                    if paragraph.strip():
+                        p = doc.add_paragraph(paragraph.strip())
+                        p.style = 'Normal'
+            
+            # Also extract images
+            image_list = page.get_images()
+            for img_index, img in enumerate(image_list):
+                try:
+                    xref = img[0]
+                    base_image = pdf_doc.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    
+                    # Save temp image
+                    temp_img = f"/tmp/pdf_img_{page_num}_{img_index}.png"
+                    with open(temp_img, "wb") as f:
+                        f.write(image_bytes)
+                    
+                    # Insert into Word
+                    doc.add_picture(temp_img, width=DocxInches(5))
+                    
+                    # Cleanup
+                    os.remove(temp_img)
+                except Exception:
+                    pass
+        
+        pdf_doc.close()
+        doc.save(output_path)
+        return output_path
+    else:
+        # Use standard conversion for text-based PDFs
+        return pdf_to_word_advanced(pdf_path, output_path)
 
 
 def pdf_to_word_advanced(pdf_path: str, output_path: Optional[str] = None) -> str:
@@ -132,10 +272,14 @@ def pdf_to_word_advanced(pdf_path: str, output_path: Optional[str] = None) -> st
 def pdf_to_word(pdf_path: str, output_path: Optional[str] = None) -> str:
     """
     Convert PDF to Word document
-    Uses pdf2docx for layout preservation, falls back to advanced method
+    Automatically uses OCR for image-based PDFs
     """
     if output_path is None:
         output_path = str(Path(pdf_path).with_suffix('.docx'))
+    
+    # Check if OCR is needed
+    if is_image_based_pdf(pdf_path):
+        return pdf_to_word_with_ocr(pdf_path, output_path)
     
     try:
         # Try pdf2docx first (best for complex layouts)
