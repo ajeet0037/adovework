@@ -127,7 +127,7 @@ export const metadata: Metadata = {
     google: 'Q06NIux_aziLDVQiCW6ZgSTzJPG1mQ005UNG6nK6so4',
     other: {
       'msvalidate.01': '6FEA5F91B51DDC20CC5ED8CCA51711FD',
-      'google-adsense-account': 'ca-pub-2441854726680039',
+      'google-adsense-account': process.env.NEXT_PUBLIC_ADSENSE_ID || '',
     },
   },
   category: 'technology',
