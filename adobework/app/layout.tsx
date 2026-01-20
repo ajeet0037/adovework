@@ -127,6 +127,7 @@ export const metadata: Metadata = {
     google: 'Q06NIux_aziLDVQiCW6ZgSTzJPG1mQ005UNG6nK6so4',
     other: {
       'msvalidate.01': '6FEA5F91B51DDC20CC5ED8CCA51711FD',
+      'google-adsense-account': 'ca-pub-2441854726680039',
     },
   },
   category: 'technology',
@@ -218,11 +219,11 @@ export default function RootLayout({
         {/* Critical: Preconnect to fonts first */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        
+
         {/* Defer ad-related preconnects - not critical for LCP */}
         <link rel="dns-prefetch" href="https://pagead2.googlesyndication.com" />
         <link rel="dns-prefetch" href="https://googleads.g.doubleclick.net" />
-        
+
         {/* Google Analytics */}
         {process.env.NEXT_PUBLIC_GA_ID && (
           <>
