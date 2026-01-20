@@ -1,0 +1,57 @@
+{
+  "name": "adobework",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "analyze": "ANALYZE=true npm run build"
+  },
+  "browserslist": [
+    "Chrome >= 90",
+    "Firefox >= 90",
+    "Safari >= 14",
+    "Edge >= 90",
+    "iOS >= 14",
+    "not dead",
+    "not op_mini all"
+  ],
+  "dependencies": {
+    "@imgly/background-removal": "^1.7.0",
+    "@vercel/analytics": "^1.6.1",
+    "docx": "^9.5.1",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.11.0",
+    "next": "16.1.0",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^4.0.379",
+    "pptxgenjs": "^4.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "tesseract.js": "^7.0.0",
+    "unpdf": "^1.4.0"
+  },
+  "devDependencies": {
+    "@next/bundle-analyzer": "^16.1.4",
+    "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.1",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5.1.2",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.0",
+    "fast-check": "^4.5.1",
+    "jsdom": "^27.3.0",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^4.0.16"
+  }
+}

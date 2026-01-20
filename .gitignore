@@ -1,0 +1,20 @@
+# Kiro specs - internal development files
+.kiro/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+*.log
+
+# Documentation files (temporary/generated)
+CODE_REVIEW.md
+IMPROVEMENTS_SUMMARY.md
+VERIFICATION_REPORT.md
+DEPLOYMENT.md
+FIXES.md

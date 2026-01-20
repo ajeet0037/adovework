@@ -1,0 +1,16 @@
+# AdobeWork Robots.txt
+# https://www.adobework.in
+
+User-agent: *
+Allow: /
+
+# Disallow admin and API routes
+Disallow: /api/
+Disallow: /_next/
+Disallow: /admin/
+
+# Sitemap location
+Sitemap: https://www.adobework.in/sitemap.xml
+
+# Crawl delay for polite crawling
+Crawl-delay: 1
