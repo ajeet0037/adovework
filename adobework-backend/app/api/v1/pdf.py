@@ -40,21 +40,19 @@ router = APIRouter(prefix="/pdf", tags=["PDF"])
 @router.post("/to-word", response_model=FileResponseModel)
 async def pdf_to_word(
     file: UploadFile = File(...),
-    mode: str = Form("auto", description="Conversion mode: auto, hybrid, image, text, ocr")
+    mode: str = Form("text", description="Conversion mode: text (default), auto, hybrid, image, ocr")
 ):
     """
-    Convert PDF to Word document with smart auto-detection.
+    Convert PDF to Word document.
     
     Modes:
-    - **auto** (default): Automatically detects the best conversion method based on PDF analysis.
-      Uses 'text' for simple PDFs, 'hybrid' for complex PDFs (like Aadhaar), 'ocr' for scanned docs.
+    - **text** (default): Extract editable text using pdf2docx. Best for most documents.
     
-    - **hybrid**: Image + extracted text. Best for complex documents - preserves layout perfectly
-      AND includes copyable text below each page.
+    - **auto**: Smart auto-detection based on PDF analysis.
     
-    - **image**: Image only. Perfect visual layout, but text is not copyable.
+    - **hybrid**: Text with formatting preservation. Good for complex documents.
     
-    - **text**: Editable text extraction. May break layout for complex documents.
+    - **image**: Image only. Perfect visual layout, but text is not editable.
     
     - **ocr**: Force OCR. For scanned documents with no selectable text.
     """

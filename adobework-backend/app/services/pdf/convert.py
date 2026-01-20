@@ -219,17 +219,17 @@ def pdf_to_word_image_mode(pdf_path: str, output_path: Optional[str] = None, dpi
     return output_path
 
 
-def pdf_to_word_hybrid_mode(pdf_path: str, output_path: Optional[str] = None, dpi: int = 200) -> str:
+def pdf_to_word_hybrid_mode(pdf_path: str, output_path: Optional[str] = None) -> str:
     """
-    Hybrid mode: Renders pages as images for perfect layout, but also includes
-    OCR/extracted text below each image for searchability and copy/paste.
+    Hybrid mode: Extracts text with exact positions and formatting,
+    and images at their original locations.
     
-    Best for complex documents where you need both visual fidelity AND text access.
+    Maintains the original layout as closely as possible - text where text was,
+    images where images were.
     
     Args:
         pdf_path: Path to input PDF
         output_path: Optional output path
-        dpi: Image resolution
     
     Returns:
         Path to output Word document
@@ -237,66 +237,88 @@ def pdf_to_word_hybrid_mode(pdf_path: str, output_path: Optional[str] = None, dp
     if output_path is None:
         output_path = str(Path(pdf_path).with_suffix('.docx'))
     
+    # Open PDF with PyMuPDF for accurate extraction
     pdf_doc = fitz.open(pdf_path)
-    doc = DocxDocument()
     
-    # Calculate zoom factor for desired DPI
-    zoom = dpi / 72.0
-    mat = fitz.Matrix(zoom, zoom)
+    # Create Word document
+    doc = DocxDocument()
     
     for page_num in range(len(pdf_doc)):
         page = pdf_doc[page_num]
+        
+        # Extract text blocks with formatting
+        blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
         
         # Add page break between pages (except first)
         if page_num > 0:
             doc.add_page_break()
         
-        # Render page as high-quality image
-        pix = page.get_pixmap(matrix=mat)
-        
-        # Save temp image
-        temp_img = f"/tmp/pdf_page_{page_num}_{os.getpid()}.png"
-        pix.save(temp_img)
-        
-        # Get image dimensions
-        img_width_inches = page.rect.width / 72.0
-        max_width = 6.5
-        if img_width_inches > max_width:
-            img_width_inches = max_width
-        
-        # Insert image into Word document
-        try:
-            doc.add_picture(temp_img, width=DocxInches(img_width_inches))
-        except Exception as e:
-            print(f"Error adding image for page {page_num}: {e}")
-        
-        # Cleanup temp file
-        try:
-            os.remove(temp_img)
-        except:
-            pass
-        
-        # Extract text from PDF (try direct extraction first, fall back to OCR)
-        text = page.get_text().strip()
-        
-        # If no text extracted, try OCR
-        if len(text) < 50:
-            try:
-                text = ocr_pdf_page(page, lang='eng+hin')
-            except:
-                text = ""
-        
-        # Add extracted/OCR text below the image (in smaller font, as reference)
-        if text:
-            doc.add_paragraph()  # Spacer
-            para = doc.add_paragraph()
-            para.add_run("--- Extracted Text (for copy/paste) ---").bold = True
+        for block in blocks:
+            if block["type"] == 0:  # Text block
+                for line in block["lines"]:
+                    # Create paragraph for each line
+                    para = doc.add_paragraph()
+                    
+                    for span in line["spans"]:
+                        text = span["text"]
+                        if not text.strip():
+                            continue
+                        
+                        # Create run with formatting
+                        run = para.add_run(text)
+                        
+                        # Apply font size
+                        run.font.size = DocxPt(span["size"])
+                        
+                        # Apply font name (map common PDF fonts to Word fonts)
+                        pdf_font = span["font"].lower()
+                        if "times" in pdf_font:
+                            run.font.name = "Times New Roman"
+                        elif "arial" in pdf_font or "helvetica" in pdf_font:
+                            run.font.name = "Arial"
+                        elif "courier" in pdf_font:
+                            run.font.name = "Courier New"
+                        elif "georgia" in pdf_font:
+                            run.font.name = "Georgia"
+                        elif "verdana" in pdf_font:
+                            run.font.name = "Verdana"
+                        else:
+                            run.font.name = "Calibri"  # Default
+                        
+                        # Apply bold/italic from flags
+                        flags = span["flags"]
+                        run.bold = bool(flags & 2**4)  # Bold flag
+                        run.italic = bool(flags & 2**1)  # Italic flag
+                        
+                        # Apply color
+                        color = span["color"]
+                        if color != 0:
+                            r = (color >> 16) & 0xFF
+                            g = (color >> 8) & 0xFF
+                            b = color & 0xFF
+                            run.font.color.rgb = RGBColor(r, g, b)
             
-            # Add the text content
-            for line in text.split('\n'):
-                if line.strip():
-                    p = doc.add_paragraph(line.strip())
-                    p.style = 'Normal'
+            elif block["type"] == 1:  # Image block
+                # Extract and insert image
+                try:
+                    img_rect = fitz.Rect(block["bbox"])
+                    clip = page.get_pixmap(clip=img_rect, matrix=fitz.Matrix(2, 2))
+                    img_bytes = clip.tobytes("png")
+                    
+                    # Save temp image
+                    temp_img = f"/tmp/pdf_img_{page_num}_{block['number']}.png"
+                    with open(temp_img, "wb") as f:
+                        f.write(img_bytes)
+                    
+                    # Calculate image width in inches (scale to fit page)
+                    img_width_points = block["bbox"][2] - block["bbox"][0]
+                    img_width_inches = min(img_width_points / 72.0, 6.0)
+                    
+                    # Insert into Word
+                    doc.add_picture(temp_img, width=DocxInches(img_width_inches))
+                    os.remove(temp_img)
+                except Exception as e:
+                    print(f"Error adding image: {e}")
     
     pdf_doc.close()
     doc.save(output_path)
@@ -473,18 +495,18 @@ def pdf_to_word_advanced(pdf_path: str, output_path: Optional[str] = None) -> st
     return output_path
 
 
-def pdf_to_word(pdf_path: str, output_path: Optional[str] = None, mode: str = 'auto') -> str:
+def pdf_to_word(pdf_path: str, output_path: Optional[str] = None, mode: str = 'text') -> str:
     """
-    Convert PDF to Word document with smart auto-detection.
+    Convert PDF to Word document.
     
     Args:
         pdf_path: Path to input PDF
         output_path: Optional output path
         mode: Conversion mode
-            - 'auto' (default): Smart auto-detection based on PDF analysis
-            - 'hybrid': Image + extracted text (best for complex docs like Aadhaar)
-            - 'image': Image only (perfect visual layout, no text)
-            - 'text': Extract editable text (may break layout for complex PDFs)
+            - 'text' (default): Extract editable text using pdf2docx
+            - 'auto': Smart auto-detection based on PDF analysis
+            - 'hybrid': Text with formatting preservation
+            - 'image': Image only (perfect visual layout, no editable text)
             - 'ocr': Force OCR (for scanned documents)
     
     Returns:
@@ -493,8 +515,20 @@ def pdf_to_word(pdf_path: str, output_path: Optional[str] = None, mode: str = 'a
     if output_path is None:
         output_path = str(Path(pdf_path).with_suffix('.docx'))
     
+    # Text mode - use pdf2docx for editable output
+    if mode == 'text':
+        try:
+            print(f"[PDF to Word] Using text mode (pdf2docx) for editable output")
+            cv = PDFToDocxConverter(pdf_path)
+            cv.convert(output_path)
+            cv.close()
+            return output_path
+        except Exception as e:
+            print(f"[PDF to Word] pdf2docx failed: {e}, falling back to advanced method")
+            return pdf_to_word_advanced(pdf_path, output_path)
+    
     # Smart auto-detection
-    if mode == 'auto':
+    elif mode == 'auto':
         analysis = analyze_pdf_type(pdf_path)
         print(f"[PDF Analysis] Type: {analysis['recommendation']}, "
               f"Text: {analysis['text_length']} chars, "
@@ -536,7 +570,8 @@ def pdf_to_word(pdf_path: str, output_path: Optional[str] = None, mode: str = 'a
     elif mode == 'ocr':
         return pdf_to_word_with_ocr(pdf_path, output_path)
     
-    elif mode == 'text':
+    else:
+        # Any other mode - default to text mode (pdf2docx)
         try:
             cv = PDFToDocxConverter(pdf_path)
             cv.convert(output_path)
@@ -544,10 +579,6 @@ def pdf_to_word(pdf_path: str, output_path: Optional[str] = None, mode: str = 'a
             return output_path
         except Exception:
             return pdf_to_word_advanced(pdf_path, output_path)
-    
-    else:
-        # Unknown mode - default to hybrid for safety
-        return pdf_to_word_hybrid_mode(pdf_path, output_path)
 
 
 def pdf_to_excel_with_ocr(pdf_path: str, output_path: Optional[str] = None) -> str:
