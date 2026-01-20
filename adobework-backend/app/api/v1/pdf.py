@@ -38,8 +38,20 @@ router = APIRouter(prefix="/pdf", tags=["PDF"])
 # ============ PDF Conversions ============
 
 @router.post("/to-word", response_model=FileResponseModel)
-async def pdf_to_word(file: UploadFile = File(...)):
-    """Convert PDF to Word document"""
+async def pdf_to_word(
+    file: UploadFile = File(...),
+    preserve_layout: bool = Form(True, description="Use image mode for perfect layout (best for complex docs like Aadhaar)")
+):
+    """
+    Convert PDF to Word document.
+    
+    - preserve_layout=True (default): Converts each page as high-quality image.
+      Best for complex documents like ID cards, Aadhaar, certificates.
+      Guarantees perfect visual layout but text is not editable.
+    
+    - preserve_layout=False: Tries to extract editable text.
+      May break layout for complex documents.
+    """
     validate_pdf_file(file)
     
     start_time = time.time()
@@ -49,7 +61,7 @@ async def pdf_to_word(file: UploadFile = File(...)):
         output_filename = generate_filename(file.filename or "document", ".docx")
         output_path = f"{settings.DOWNLOAD_DIR}/{output_filename}"
         
-        pdf_convert.pdf_to_word(input_path, output_path)
+        pdf_convert.pdf_to_word(input_path, output_path, preserve_layout=preserve_layout)
         
         file_size = Path(output_path).stat().st_size
         processing_time = time.time() - start_time

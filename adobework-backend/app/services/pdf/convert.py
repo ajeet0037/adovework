@@ -99,6 +99,73 @@ def ocr_pdf_page(page, lang='eng'):
         return ""
 
 
+def pdf_to_word_image_mode(pdf_path: str, output_path: Optional[str] = None, dpi: int = 200) -> str:
+    """
+    Convert PDF to Word by rendering each page as a high-quality image.
+    Best for complex layouts like ID cards, Aadhaar, certificates, etc.
+    Preserves visual layout perfectly.
+    
+    Args:
+        pdf_path: Path to input PDF
+        output_path: Optional output path
+        dpi: Image resolution (default 200 for good quality/size balance)
+    
+    Returns:
+        Path to output Word document
+    """
+    if output_path is None:
+        output_path = str(Path(pdf_path).with_suffix('.docx'))
+    
+    # Open PDF
+    pdf_doc = fitz.open(pdf_path)
+    doc = DocxDocument()
+    
+    # Calculate zoom factor for desired DPI (default PDF is 72 DPI)
+    zoom = dpi / 72.0
+    mat = fitz.Matrix(zoom, zoom)
+    
+    for page_num in range(len(pdf_doc)):
+        page = pdf_doc[page_num]
+        
+        # Add page break between pages (except first)
+        if page_num > 0:
+            doc.add_page_break()
+        
+        # Render page as high-quality image
+        pix = page.get_pixmap(matrix=mat)
+        
+        # Save temp image
+        temp_img = f"/tmp/pdf_page_{page_num}_{os.getpid()}.png"
+        pix.save(temp_img)
+        
+        # Get image dimensions to maintain aspect ratio
+        img_width_inches = page.rect.width / 72.0  # Convert points to inches
+        img_height_inches = page.rect.height / 72.0
+        
+        # Scale to fit within Word page (max 6.5" wide for standard margins)
+        max_width = 6.5
+        if img_width_inches > max_width:
+            scale = max_width / img_width_inches
+            img_width_inches = max_width
+            img_height_inches *= scale
+        
+        # Insert image into Word document
+        try:
+            doc.add_picture(temp_img, width=DocxInches(img_width_inches))
+        except Exception as e:
+            print(f"Error adding image for page {page_num}: {e}")
+        
+        # Cleanup temp file
+        try:
+            os.remove(temp_img)
+        except:
+            pass
+    
+    pdf_doc.close()
+    doc.save(output_path)
+    return output_path
+
+
 def pdf_to_word_with_ocr(pdf_path: str, output_path: Optional[str] = None) -> str:
     """
     Convert PDF to Word with OCR support for image-based PDFs
@@ -269,20 +336,33 @@ def pdf_to_word_advanced(pdf_path: str, output_path: Optional[str] = None) -> st
     return output_path
 
 
-def pdf_to_word(pdf_path: str, output_path: Optional[str] = None) -> str:
+def pdf_to_word(pdf_path: str, output_path: Optional[str] = None, preserve_layout: bool = True) -> str:
     """
     Convert PDF to Word document
-    Automatically uses OCR for image-based PDFs
+    
+    Args:
+        pdf_path: Path to input PDF
+        output_path: Optional output path
+        preserve_layout: If True, uses image mode for perfect visual layout (best for complex docs).
+                        If False, tries to extract editable text (may break layout for complex PDFs).
+    
+    Returns:
+        Path to output Word document
     """
     if output_path is None:
         output_path = str(Path(pdf_path).with_suffix('.docx'))
     
+    # Use image mode for guaranteed layout preservation (best for Aadhaar, ID cards, etc.)
+    if preserve_layout:
+        return pdf_to_word_image_mode(pdf_path, output_path)
+    
+    # Legacy mode: try to extract editable text
     # Check if OCR is needed
     if is_image_based_pdf(pdf_path):
         return pdf_to_word_with_ocr(pdf_path, output_path)
     
     try:
-        # Try pdf2docx first (best for complex layouts)
+        # Try pdf2docx first (for simple text-based PDFs)
         cv = PDFToDocxConverter(pdf_path)
         cv.convert(output_path)
         cv.close()
