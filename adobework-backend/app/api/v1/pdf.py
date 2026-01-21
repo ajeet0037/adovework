@@ -4,6 +4,7 @@ All PDF-related operations
 """
 import time
 import os
+import uuid
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Query
@@ -314,7 +315,11 @@ async def split_pdf(
     input_path = await save_upload_file(file, "split")
     
     try:
-        output_dir = f"{settings.DOWNLOAD_DIR}/split_{int(time.time())}"
+        # Generate unique directory name
+        timestamp = int(time.time())
+        unique_id = uuid.uuid4().hex[:8]
+        dir_name = f"split_{timestamp}_{unique_id}"
+        output_dir = f"{settings.DOWNLOAD_DIR}/{dir_name}"
         os.makedirs(output_dir, exist_ok=True)
         
         # Parse pages if provided
@@ -338,7 +343,7 @@ async def split_pdf(
         for path in output_paths:
             filename = Path(path).name
             files_info.append({
-                "file_url": f"/downloads/split_{int(time.time())}/{filename}",
+                "file_url": f"/downloads/{dir_name}/{filename}",
                 "filename": filename,
                 "file_size": Path(path).stat().st_size
             })
@@ -972,7 +977,11 @@ async def extract_images_from_pdf(file: UploadFile = File(...)):
     input_path = await save_upload_file(file, "extract-img")
     
     try:
-        output_dir = f"{settings.DOWNLOAD_DIR}/images_{int(time.time())}"
+        # Generate unique directory name
+        timestamp = int(time.time())
+        unique_id = uuid.uuid4().hex[:8]
+        dir_name = f"images_{timestamp}_{unique_id}"
+        output_dir = f"{settings.DOWNLOAD_DIR}/{dir_name}"
         
         with pdf_editor.PDFEditor(input_path) as editor:
             image_paths = editor.extract_images(output_dir)
@@ -983,7 +992,7 @@ async def extract_images_from_pdf(file: UploadFile = File(...)):
         for path in image_paths:
             filename = Path(path).name
             images_info.append({
-                "file_url": f"/downloads/images_{int(time.time())}/{filename}",
+                "file_url": f"/downloads/{dir_name}/{filename}",
                 "filename": filename,
                 "file_size": Path(path).stat().st_size
             })

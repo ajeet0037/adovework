@@ -3,6 +3,7 @@ Image API Endpoints
 All image-related operations
 """
 import time
+import uuid
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form
@@ -314,14 +315,16 @@ async def adjust_image(
         temp_paths = []
         
         if brightness is not None:
-            temp_path = f"{settings.UPLOAD_DIR}/temp_bright_{int(time.time())}{ext}"
+            unique_id = uuid.uuid4().hex[:8]
+            temp_path = f"{settings.UPLOAD_DIR}/temp_bright_{unique_id}{ext}"
             img_ops.adjust_brightness(current_path, temp_path, brightness)
             if current_path != input_path:
                 temp_paths.append(current_path)
             current_path = temp_path
         
         if contrast is not None:
-            temp_path = f"{settings.UPLOAD_DIR}/temp_contrast_{int(time.time())}{ext}"
+            unique_id = uuid.uuid4().hex[:8]
+            temp_path = f"{settings.UPLOAD_DIR}/temp_contrast_{unique_id}{ext}"
             img_ops.adjust_contrast(current_path, temp_path, contrast)
             if current_path != input_path:
                 temp_paths.append(current_path)
